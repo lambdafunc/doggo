@@ -1,17 +1,18 @@
 package resolvers
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/miekg/dns"
 	"github.com/mr-karan/doggo/pkg/models"
-	"github.com/sirupsen/logrus"
 )
 
 // Options represent a set of common options
 // to configure a Resolver.
 type Options struct {
-	Logger *logrus.Logger
+	Logger *slog.Logger
 
 	Nameservers        []models.Nameserver
 	UseIPv4            bool
@@ -28,7 +29,7 @@ type Options struct {
 // Client. Different types of providers can load
 // a DNS Resolver satisfying this interface.
 type Resolver interface {
-	Lookup(dns.Question) (Response, error)
+	Lookup(ctx context.Context, questions []dns.Question, flags QueryFlags) ([]Response, error)
 }
 
 // Response represents a custom output format

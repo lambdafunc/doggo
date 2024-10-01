@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	// DefaultTLSPort specifies the default port for a DNS server connecting over TCP over TLS.
@@ -17,6 +20,8 @@ const (
 	DOTResolver      = "dot"
 	DNSCryptResolver = "dnscrypt"
 	DOQResolver      = "doq"
+	// CommonRecordTypes is a string containing all common DNS record types
+	CommonRecordTypes = "A AAAA CNAME MX NS PTR SOA SRV TXT CAA"
 )
 
 // QueryFlags is used store the query params
@@ -39,6 +44,11 @@ type QueryFlags struct {
 	Strategy           string        `koanf:"strategy" strategy:"-"`
 	InsecureSkipVerify bool          `koanf:"skip-hostname-verification" skip-hostname-verification:"-"`
 	TLSHostname        string        `koanf:"tls-hostname" tls-hostname:"-"`
+	QueryAny           bool          `koanf:"any" json:"any"`
+
+	// Globalping flags
+	GPFrom  string `koanf:"gp-from" json:"gp-from"`
+	GPLimit int    `koanf:"gp-limit" json:"gp-limit"`
 }
 
 // Nameserver represents the type of Nameserver
@@ -46,4 +56,9 @@ type QueryFlags struct {
 type Nameserver struct {
 	Address string
 	Type    string
+}
+
+// GetCommonRecordTypes returns a slice of common DNS record types
+func GetCommonRecordTypes() []string {
+	return strings.Fields(CommonRecordTypes)
 }

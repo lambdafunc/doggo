@@ -1,11 +1,11 @@
 package resolvers
 
 import (
+	"context"
 	"crypto/tls"
 	"time"
 
 	"github.com/miekg/dns"
-	"github.com/sirupsen/logrus"
 )
 
 // ClassicResolver represents the config options for setting up a Resolver.
@@ -58,25 +58,29 @@ func NewClassicResolver(server string, classicOpts ClassicResolverOpts, resolver
 	}, nil
 }
 
-// Lookup takes a dns.Question and sends them to DNS Server.
+// query takes a dns.Question and sends them to DNS Server.
 // It parses the Response from the server in a custom output format.
-func (r *ClassicResolver) Lookup(question dns.Question) (Response, error) {
+func (r *ClassicResolver) query(ctx context.Context, question dns.Question, flags QueryFlags) (Response, error) {
 	var (
 		rsp      Response
-		messages = prepareMessages(question, r.resolverOptions.Ndots, r.resolverOptions.SearchList)
+		messages = prepareMessages(question, flags, r.resolverOptions.Ndots, r.resolverOptions.SearchList)
 	)
 	for _, msg := range messages {
-		r.resolverOptions.Logger.WithFields(logrus.Fields{
-			"domain":     msg.Question[0].Name,
-			"ndots":      r.resolverOptions.Ndots,
-			"nameserver": r.server,
-		}).Debug("Attempting to resolve")
+		r.resolverOptions.Logger.Debug("Attempting to resolve",
+			"domain", msg.Question[0].Name,
+			"ndots", r.resolverOptions.Ndots,
+			"nameserver", r.server,
+		)
 
 		// Since the library doesn't include tcp.Dial time,
 		// it's better to not rely on `rtt` provided here and calculate it ourselves.
 		now := time.Now()
-		in, _, err := r.client.Exchange(&msg, r.server)
+
+		in, _, err := r.client.ExchangeContext(ctx, &msg, r.server)
 		if err != nil {
+			if err == context.Canceled || err == context.DeadlineExceeded {
+				return rsp, err
+			}
 			return rsp, err
 		}
 
@@ -93,8 +97,8 @@ func (r *ClassicResolver) Lookup(question dns.Question) (Response, error) {
 			default:
 				r.client.Net = "tcp"
 			}
-			r.resolverOptions.Logger.WithField("protocol", r.client.Net).Debug("Response truncated; retrying now")
-			return r.Lookup(question)
+			r.resolverOptions.Logger.Debug("Response truncated; retrying now", "protocol", r.client.Net)
+			return r.query(ctx, question, flags)
 		}
 
 		// Pack questions in output.
@@ -117,6 +121,19 @@ func (r *ClassicResolver) Lookup(question dns.Question) (Response, error) {
 			// Stop iterating the searchlist.
 			break
 		}
+
+		// Check if context is done after each iteration
+		select {
+		case <-ctx.Done():
+			return rsp, ctx.Err()
+		default:
+			// Continue to next iteration
+		}
 	}
 	return rsp, nil
+}
+
+// Lookup implements the Resolver interface
+func (r *ClassicResolver) Lookup(ctx context.Context, questions []dns.Question, flags QueryFlags) ([]Response, error) {
+	return ConcurrentLookup(ctx, questions, flags, r.query, r.resolverOptions.Logger)
 }

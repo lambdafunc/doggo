@@ -2,15 +2,16 @@ package resolvers
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/miekg/dns"
-	"github.com/sirupsen/logrus"
 )
 
 // DOHResolver represents the config options for setting up a DOH based resolver.
@@ -30,8 +31,14 @@ func NewDOHResolver(server string, resolverOpts Options) (Resolver, error) {
 	if u.Scheme != "https" {
 		return nil, fmt.Errorf("missing https in %s", server)
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		ServerName:         resolverOpts.TLSHostname,
+		InsecureSkipVerify: resolverOpts.InsecureSkipVerify,
+	}
 	httpClient := &http.Client{
-		Timeout: resolverOpts.Timeout,
+		Timeout:   resolverOpts.Timeout,
+		Transport: transport,
 	}
 	return &DOHResolver{
 		client:          httpClient,
@@ -40,56 +47,70 @@ func NewDOHResolver(server string, resolverOpts Options) (Resolver, error) {
 	}, nil
 }
 
-// Lookup takes a dns.Question and sends them to DNS Server.
+// query takes a dns.Question and sends them to DNS Server.
 // It parses the Response from the server in a custom output format.
-func (r *DOHResolver) Lookup(question dns.Question) (Response, error) {
+func (r *DOHResolver) query(ctx context.Context, question dns.Question, flags QueryFlags) (Response, error) {
 	var (
 		rsp      Response
-		messages = prepareMessages(question, r.resolverOptions.Ndots, r.resolverOptions.SearchList)
+		messages = prepareMessages(question, flags, r.resolverOptions.Ndots, r.resolverOptions.SearchList)
 	)
 
 	for _, msg := range messages {
-		r.resolverOptions.Logger.WithFields(logrus.Fields{
-			"domain":     msg.Question[0].Name,
-			"ndots":      r.resolverOptions.Ndots,
-			"nameserver": r.server,
-		}).Debug("Attempting to resolve")
+		r.resolverOptions.Logger.Debug("Attempting to resolve",
+			"domain", msg.Question[0].Name,
+			"ndots", r.resolverOptions.Ndots,
+			"nameserver", r.server,
+		)
 		// get the DNS Message in wire format.
 		b, err := msg.Pack()
 		if err != nil {
 			return rsp, err
 		}
 		now := time.Now()
-		// Make an HTTP POST request to the DNS server with the DNS message as wire format bytes in the body.
-		resp, err := r.client.Post(r.server, "application/dns-message", bytes.NewBuffer(b))
+
+		// Create a new request with the context
+		req, err := http.NewRequestWithContext(ctx, "POST", r.server, bytes.NewBuffer(b))
 		if err != nil {
 			return rsp, err
 		}
+		req.Header.Set("Content-Type", "application/dns-message")
+
+		// Make an HTTP POST request to the DNS server with the DNS message as wire format bytes in the body.
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return rsp, err
+		}
+		defer resp.Body.Close()
+
 		if resp.StatusCode == http.StatusMethodNotAllowed {
 			url, err := url.Parse(r.server)
 			if err != nil {
 				return rsp, err
 			}
 			url.RawQuery = fmt.Sprintf("dns=%v", base64.RawURLEncoding.EncodeToString(b))
-			resp, err = r.client.Get(url.String())
+
+			req, err = http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 			if err != nil {
 				return rsp, err
 			}
+			resp, err = r.client.Do(req)
+			if err != nil {
+				return rsp, err
+			}
+			defer resp.Body.Close()
 		}
 		if resp.StatusCode != http.StatusOK {
 			return rsp, fmt.Errorf("error from nameserver %s", resp.Status)
 		}
 		rtt := time.Since(now)
+
 		// if debug, extract the response headers
-		if r.resolverOptions.Logger.IsLevelEnabled(logrus.DebugLevel) {
-			for header, value := range resp.Header {
-				r.resolverOptions.Logger.WithFields(logrus.Fields{
-					header: value,
-				}).Debug("DOH response header")
-			}
+		for header, value := range resp.Header {
+			r.resolverOptions.Logger.Debug("DOH response header", header, value)
 		}
+
 		// extract the binary response in DNS Message.
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return rsp, err
 		}
@@ -116,6 +137,19 @@ func (r *DOHResolver) Lookup(question dns.Question) (Response, error) {
 			// stop iterating the searchlist.
 			break
 		}
+
+		// Check if context is done after each iteration
+		select {
+		case <-ctx.Done():
+			return rsp, ctx.Err()
+		default:
+			// Continue to next iteration
+		}
 	}
 	return rsp, nil
+}
+
+// Lookup implements the Resolver interface
+func (r *DOHResolver) Lookup(ctx context.Context, questions []dns.Question, flags QueryFlags) ([]Response, error) {
+	return ConcurrentLookup(ctx, questions, flags, r.query, r.resolverOptions.Logger)
 }

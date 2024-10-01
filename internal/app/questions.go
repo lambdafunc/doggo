@@ -1,16 +1,20 @@
 package app
 
 import (
+	"os"
 	"strings"
 
 	"github.com/miekg/dns"
+	"github.com/mr-karan/doggo/pkg/models"
 )
 
 // LoadFallbacks sets fallbacks for options
 // that are not specified by the user but necessary
 // for the resolver.
 func (app *App) LoadFallbacks() {
-	if len(app.QueryFlags.QTypes) == 0 {
+	if app.QueryFlags.QueryAny {
+		app.QueryFlags.QTypes = models.GetCommonRecordTypes()
+	} else if len(app.QueryFlags.QTypes) == 0 {
 		app.QueryFlags.QTypes = append(app.QueryFlags.QTypes, "A")
 	}
 	if len(app.QueryFlags.QClasses) == 0 {
@@ -46,8 +50,8 @@ func (app *App) ReverseLookup() {
 	for _, n := range app.QueryFlags.QNames {
 		addr, err := dns.ReverseAddr(n)
 		if err != nil {
-			app.Logger.WithError(err).Error("error formatting address")
-			app.Logger.Exit(2)
+			app.Logger.Error("error formatting address", "error", err)
+			os.Exit(2)
 		}
 		formattedNames = append(formattedNames, addr)
 	}

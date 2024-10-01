@@ -1,4 +1,4 @@
-# doggo - Initial Release Milestone
+# todo
 
 ## Resolver
 - [x] Create a DNS Resolver struct
@@ -13,7 +13,7 @@
   - [x] Change lookup method.
 - [x] Major records supported
 - [x] Support multiple resolvers
-  - [x] Take multiple transport options and initialise resolvers accordingly. 
+  - [x] Take multiple transport options and initialise resolvers accordingly.
 - [x] Add timeout support
 - [x] Support SOA/NXDOMAIN
 
@@ -53,17 +53,23 @@
 ---
 # Future Release
 
-- [ ] Support obscure protocol tweaks in `dig`
+- [x] Support obscure protocol tweaks in `dig`
 - [x] Support more DNS Record Types
 - [x] Shell completions
   - [x] zsh
   - [x] fish
-- [ ] Add tests for Resolvers.
-- [ ] Add tests for CLI Output.
-- [ ] Homebrew - Goreleaser
-- [ ] Add support for `dig +trace` like functionality.
-- [ ] Add `dig +short` short output
+- [x] Homebrew - Goreleaser
+- [x] Add `dig +short` short output
 - [x] Add `--strategy` for picking nameservers.
-- [ ] Explore `dig.rc` kinda file
 - [x] Separate Authority/Answer in JSON output.
 - [x] Error on NXDomain (Related upstream [bug](https://github.com/miekg/dns/issues/1198))
+- [x] Reverse Lookup (dig -x)
+- [x] Shell completion proper
+- [x] CLI docs
+- [x] Merge those as misc docs or usage
+- [x] Example Guide
+
+- [ ] Add tests for Resolvers.
+- [ ] Add tests for CLI Output.
+- [ ] Add support for `dig +trace` like functionality.
+- [ ] Explore `dig.rc` kinda file

@@ -1,5 +1,5 @@
 CLI_BIN := ./bin/doggo.bin
-API_BIN := ./bin/doggo-api.bin
+WEB_BIN := ./bin/doggo-web.bin
 
 HASH := $(shell git rev-parse --short HEAD)
 BUILD_DATE := $(shell date '+%Y-%m-%d %H:%M:%S')
@@ -9,20 +9,17 @@ VERSION := ${HASH}
 build-cli:
 	go build -o ${CLI_BIN} -ldflags="-X 'main.buildVersion=${VERSION}' -X 'main.buildDate=${BUILD_DATE}'" ./cmd/doggo/
 
-.PHONY: build-api
-build-api:
-	go build -o ${API_BIN} -ldflags="-X 'main.buildVersion=${VERSION}' -X 'main.buildDate=${BUILD_DATE}'" ./cmd/api/
-
-.PHONY: build
-build: build-api build-cli
+.PHONY: build-web
+build-web:
+	go build -o ${WEB_BIN} -ldflags="-X 'main.buildVersion=${VERSION}' -X 'main.buildDate=${BUILD_DATE}'" ./web/
 
 .PHONY: run-cli
 run-cli: build-cli ## Build and Execute the CLI binary after the build step.
 	${CLI_BIN}
 
-.PHONY: run-api
-run-api: build-api ## Build and Execute the API binary after the build step.
-	${API_BIN} --config config-api-sample.toml
+.PHONY: run-web
+run-web: build-web ## Build and Execute the API binary after the build step.
+	${WEB_BIN} --config config-api-sample.toml
 
 .PHONY: clean
 clean:
